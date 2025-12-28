@@ -12,6 +12,7 @@ interface MapProps {
   onMarkerClick: (place: Place) => void;
   showRoute?: boolean;
   darkMode?: boolean;
+  mapStyle?: 'voyager' | 'satellite';
 }
 
 const MapComponent: React.FC<MapProps> = ({ 
@@ -21,7 +22,8 @@ const MapComponent: React.FC<MapProps> = ({
   selectedPlaceId, 
   onMarkerClick, 
   showRoute = true,
-  darkMode = false
+  darkMode = false,
+  mapStyle = 'voyager'
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
@@ -41,7 +43,12 @@ const MapComponent: React.FC<MapProps> = ({
         createTile: function(coords: any, done: any) {
           const tile = document.createElement('img');
           const url = this.getTileUrl(coords);
-          const key = `${coords.z}_${coords.x}_${coords.y}`;
+          
+          // Determine unique key based on style AND mode
+          const styleName = this.options.style || 'voyager';
+          const isDark = this.options.darkMode;
+          const styleKey = styleName === 'voyager' ? (isDark ? 'voyager_dark' : 'voyager_light') : styleName;
+          const key = `${styleKey}_${coords.z}_${coords.x}_${coords.y}`;
 
           L.DomEvent.on(tile, 'load', L.Util.bind(this._tileOnLoad, this, done, tile));
           L.DomEvent.on(tile, 'error', L.Util.bind(this._tileOnError, this, done, tile));
@@ -58,10 +65,8 @@ const MapComponent: React.FC<MapProps> = ({
             if (blob) {
               const objectUrl = URL.createObjectURL(blob);
               tile.src = objectUrl;
-              tile.onload = () => {
-                 URL.revokeObjectURL(objectUrl);
-                 this._tileOnLoad(done, tile);
-              };
+              // Clean up blob URL after load
+              tile.addEventListener('load', () => URL.revokeObjectURL(objectUrl), { once: true });
             } else {
               if (navigator.onLine) {
                 tile.src = url;
@@ -72,6 +77,7 @@ const MapComponent: React.FC<MapProps> = ({
                   saveTile(key, blob);
                 }).catch(() => { /* Ignore cache errors */ });
               } else {
+                // Fallback for offline + not cached
                 tile.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
                 this._tileOnError(done, tile, new Error('Offline and not cached'));
               }
@@ -91,14 +97,24 @@ const MapComponent: React.FC<MapProps> = ({
       
       L.control.zoom({ position: 'bottomright' }).addTo(mapInstanceRef.current);
       
+      // Determine initial URL
+      let initialUrl = '';
+      if (mapStyle === 'satellite') {
+        initialUrl = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+      } else {
+        initialUrl = darkMode 
+          ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png' 
+          : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+      }
+
       // Initial Tile Layer
       tileLayerRef.current = new OfflineTileLayer(
-        darkMode 
-          ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png' 
-          : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', 
+        initialUrl,
         {
           subdomains: 'abcd',
-          maxZoom: 20
+          maxZoom: 19,
+          style: mapStyle,
+          darkMode: darkMode
         }
       ).addTo(mapInstanceRef.current);
     }
@@ -112,15 +128,36 @@ const MapComponent: React.FC<MapProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); 
 
-  // Handle Dark Mode Switch dynamically
+  // Handle Mode Switch dynamically
   useEffect(() => {
     if (mapInstanceRef.current && tileLayerRef.current) {
-      const newUrl = darkMode 
-        ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png' 
-        : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+      let newUrl = '';
+      if (mapStyle === 'satellite') {
+        newUrl = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+      } else {
+        newUrl = darkMode 
+          ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png' 
+          : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+      }
+      
+      // Update layer options before setting URL to ensure createTile uses correct values
+      tileLayerRef.current.options.style = mapStyle;
+      tileLayerRef.current.options.darkMode = darkMode;
       tileLayerRef.current.setUrl(newUrl);
+
+      // Force refresh map size to prevent "gone map" issues during layout/style changes
+      // Use a longer timeout to ensure any CSS transitions (like 300ms sidebars) have finished
+      const refreshMap = () => {
+        if (mapInstanceRef.current) {
+          mapInstanceRef.current.invalidateSize();
+        }
+      };
+
+      refreshMap(); // Immediate
+      const timer = setTimeout(refreshMap, 400); // After transition
+      return () => clearTimeout(timer);
     }
-  }, [darkMode]);
+  }, [darkMode, mapStyle]);
 
   // Update Center
   useEffect(() => {
@@ -164,7 +201,7 @@ const MapComponent: React.FC<MapProps> = ({
           width: ${isSelected ? 36 : 28}px;
           height: ${isSelected ? 36 : 28}px;
           border-radius: 50%;
-          border: 3px solid ${darkMode ? '#1e293b' : 'white'};
+          border: 3px solid ${darkMode || mapStyle === 'satellite' ? '#1e293b' : 'white'};
           box-shadow: 0 4px 10px rgba(0,0,0,0.4);
           transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
           display: flex; 
@@ -186,12 +223,11 @@ const MapComponent: React.FC<MapProps> = ({
     if (showRoute && itineraryItems.length > 1) {
       const latlngs = itineraryItems.map(item => [item.lat, item.lng]);
       routeLineRef.current = L.polyline(latlngs, {
-        color: darkMode ? '#34d399' : '#059669', // Emerald 400/600
+        color: darkMode || mapStyle === 'satellite' ? '#34d399' : '#059669', // Emerald 400/600
         weight: 4,
         opacity: 0.8,
         dashArray: '10, 10',
-        lineCap: 'round',
-        className: 'animate-dash' // If you added css animation
+        lineCap: 'round'
       }).addTo(mapInstanceRef.current);
       
       if (!selectedPlaceId) {
@@ -200,9 +236,9 @@ const MapComponent: React.FC<MapProps> = ({
       }
     }
 
-  }, [places, itineraryItems, selectedPlaceId, onMarkerClick, showRoute, darkMode]);
+  }, [places, itineraryItems, selectedPlaceId, onMarkerClick, showRoute, darkMode, mapStyle]);
 
-  return <div ref={mapContainerRef} className={`w-full h-full z-0 transition-colors duration-500 ${darkMode ? 'bg-slate-900' : 'bg-slate-100'}`} />;
+  return <div ref={mapContainerRef} className={`w-full h-full z-0 ${darkMode ? 'bg-slate-900' : 'bg-slate-100'}`} />;
 };
 
 export default MapComponent;

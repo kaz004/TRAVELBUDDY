@@ -1,11 +1,11 @@
-import { GoogleGenAI, Type, Schema } from "@google/genai";
+
+import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { Place, ItineraryItem } from '../types';
 
-// Ensure API Key is available
-const apiKey = process.env.API_KEY || '';
-const ai = new GoogleGenAI({ apiKey });
+// Always use named parameter for apiKey as per @google/genai guidelines
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-const PLACE_SCHEMA: Schema = {
+const PLACE_SCHEMA = {
   type: Type.ARRAY,
   items: {
     type: Type.OBJECT,
@@ -22,6 +22,26 @@ const PLACE_SCHEMA: Schema = {
   }
 };
 
+export const getLocalMusicVibes = async (city: string): Promise<string[]> => {
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: `Provide 5 key musical genres, iconic artists, or cultural music styles strongly associated with the city of ${city}. Return as a JSON array of strings.`,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.ARRAY,
+          items: { type: Type.STRING }
+        }
+      }
+    });
+    return JSON.parse(response.text || '[]');
+  } catch (error) {
+    console.error("Music Vibes Suggestion Error:", error);
+    return ['Pop', 'Local Folk', 'Chill'];
+  }
+};
+
 export const searchPlacesWithGemini = async (query: string, cityContext: string): Promise<Place[]> => {
   try {
     const prompt = `
@@ -35,15 +55,16 @@ export const searchPlacesWithGemini = async (query: string, cityContext: string)
     `;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3-flash-preview',
       contents: prompt,
       config: {
         responseMimeType: 'application/json',
         responseSchema: PLACE_SCHEMA,
-        temperature: 0.3, // Lower temperature for more factual coordinate data
+        temperature: 0.3, 
       }
     });
 
+    // Access text property directly as per @google/genai standards
     const rawData = JSON.parse(response.text || '[]');
     
     // Enrich with IDs
@@ -58,10 +79,31 @@ export const searchPlacesWithGemini = async (query: string, cityContext: string)
   }
 };
 
+export const generateSpeech = async (text: string): Promise<string> => {
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash-preview-tts",
+      contents: [{ parts: [{ text: `Speak with high energy, enthusiasm, and joy: ${text}` }] }],
+      config: {
+        responseModalities: [Modality.AUDIO],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: { voiceName: 'Puck' },
+          },
+        },
+      },
+    });
+    return response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data || '';
+  } catch (error) {
+    console.error("Speech Generation Error:", error);
+    return '';
+  }
+};
+
 export const suggestCityCenter = async (city: string): Promise<[number, number]> => {
    try {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3-flash-preview',
       contents: `Return only a JSON object with 'lat' and 'lng' properties (numbers) for the center of the city: ${city}`,
       config: {
         responseMimeType: 'application/json',
@@ -79,7 +121,7 @@ export const suggestCityCenter = async (city: string): Promise<[number, number]>
     if (data.lat && data.lng) {
       return [data.lat, data.lng];
     }
-    return [48.8566, 2.3522]; // Default to Paris if fail
+    return [48.8566, 2.3522]; 
    } catch (e) {
      return [48.8566, 2.3522];
    }
@@ -100,7 +142,7 @@ export const optimizeItineraryOrder = async (items: ItineraryItem[]): Promise<st
     `;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3-flash-preview',
       contents: prompt,
       config: {
         responseMimeType: 'application/json',
@@ -121,7 +163,7 @@ export const optimizeItineraryOrder = async (items: ItineraryItem[]): Promise<st
 
 export const createTravelChat = (city: string) => {
   return ai.chats.create({
-    model: 'gemini-2.5-flash',
+    model: 'gemini-3-flash-preview',
     config: {
       systemInstruction: `
         You are "TravelBuddy", a witty, spontaneous, and opinionated local friend living in ${city}.

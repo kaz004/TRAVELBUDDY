@@ -6,6 +6,16 @@ export interface JournalEntry {
   rating?: number;
 }
 
+export interface Track {
+  id: string;
+  name: string;
+  artist: string;
+  albumArt: string;
+  previewUrl: string | null;
+  uri: string;
+  isOffline?: boolean;
+}
+
 export interface Place {
   id: string;
   name: string;
@@ -57,6 +67,9 @@ export interface AppSettings {
   currency: string;
   use24HourTime: boolean;
   offlineMode: boolean;
+  mapStyle: 'voyager' | 'satellite';
+  travelMode: 'solo' | 'team';
+  teamSize: number;
 }
 
 export enum ViewMode {
@@ -64,5 +77,6 @@ export enum ViewMode {
   ITINERARY = 'itinerary',
   SAVED = 'saved',
   JOURNAL = 'journal',
-  PROFILE = 'profile'
+  PROFILE = 'profile',
+  MUSIC = 'music'
 }

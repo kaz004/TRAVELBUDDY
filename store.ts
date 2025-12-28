@@ -1,11 +1,11 @@
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { Place, ItineraryItem, DayPlan, AppSettings, UserProfile, JournalEntry } from './types';
+import { Place, ItineraryItem, DayPlan, AppSettings, UserProfile, JournalEntry, Track } from './types';
 
 interface GlobalState {
   // Core Data
-  currentCity: string | null; // Null means no city selected yet
+  currentCity: string | null; 
   center: [number, number];
   searchResults: Place[];
   itinerary: DayPlan[];
@@ -13,6 +13,12 @@ interface GlobalState {
   user: UserProfile;
   settings: AppSettings;
   
+  // Music State
+  playlist: Track[];
+  currentTrack: Track | null;
+  isPlaying: boolean;
+  regionalTracks: Track[];
+
   // UI State
   isLoading: boolean;
   error: string | null;
@@ -27,7 +33,18 @@ interface GlobalState {
   setMapDownloadProgress: (progress: number | null) => void;
   setTotalBudget: (amount: number) => void;
   toggleDarkMode: () => void;
+  setMapStyle: (style: 'voyager' | 'satellite') => void;
+  setOffline: (offline: boolean) => void;
+  setTravelMode: (mode: 'solo' | 'team') => void;
+  setTeamSize: (size: number) => void;
   
+  // Music Actions
+  addToPlaylist: (track: Track) => void;
+  removeFromPlaylist: (id: string) => void;
+  playTrack: (track: Track | null) => void;
+  setRegionalTracks: (tracks: Track[]) => void;
+  setPlaying: (playing: boolean) => void;
+
   // Advanced Itinerary Actions
   addToItinerary: (place: Place, dayId: string) => void;
   removeFromItinerary: (dayId: string, placeId: string) => void;
@@ -58,29 +75,48 @@ export const useTripStore = create<GlobalState>()(
   persist(
     (set, get) => ({
       // Initial State
-      currentCity: null, // Start empty
-      center: [20, 0], // World view
+      currentCity: null, 
+      center: [20, 0], 
       searchResults: [],
       itinerary: INITIAL_DAYS,
       bookmarks: [],
       user: INITIAL_USER,
+      playlist: [],
+      currentTrack: null,
+      isPlaying: false,
+      regionalTracks: [],
       settings: {
         darkMode: false,
-        currency: 'USD',
+        currency: 'INR',
         use24HourTime: true,
         offlineMode: false,
+        mapStyle: 'voyager',
+        travelMode: 'solo',
+        teamSize: 2,
       },
       isLoading: false,
       error: null,
       mapDownloadProgress: null,
       totalTripBudget: 0,
 
-      // --- Actions ---
+      // --- Music Actions ---
+      addToPlaylist: (track) => set((state) => {
+        if (state.playlist.some(t => t.id === track.id)) return state;
+        return { playlist: [...state.playlist, track] };
+      }),
+      removeFromPlaylist: (id) => set((state) => ({
+        playlist: state.playlist.filter(t => t.id !== id)
+      })),
+      playTrack: (track) => set({ currentTrack: track, isPlaying: !!track }),
+      setRegionalTracks: (regionalTracks) => set({ regionalTracks }),
+      setPlaying: (isPlaying) => set({ isPlaying }),
 
+      // --- Actions ---
       setCity: (city, center) => set({ 
         currentCity: city, 
         center, 
-        searchResults: [] // Clear previous searches
+        searchResults: [],
+        regionalTracks: []
       }),
 
       setSearchResults: (results) => set({ searchResults: results }),
@@ -88,9 +124,16 @@ export const useTripStore = create<GlobalState>()(
       setError: (error) => set({ error }),
       setMapDownloadProgress: (progress) => set({ mapDownloadProgress: progress }),
       setTotalBudget: (amount) => set({ totalTripBudget: amount }),
+      setOffline: (offline) => set((state) => ({ settings: { ...state.settings, offlineMode: offline } })),
+      setTravelMode: (mode) => set((state) => ({ settings: { ...state.settings, travelMode: mode } })),
+      setTeamSize: (size) => set((state) => ({ settings: { ...state.settings, teamSize: Math.max(1, size) } })),
 
       toggleDarkMode: () => set((state) => ({ 
         settings: { ...state.settings, darkMode: !state.settings.darkMode } 
+      })),
+
+      setMapStyle: (style) => set((state) => ({
+        settings: { ...state.settings, mapStyle: style }
       })),
 
       // Itinerary Logic
@@ -200,7 +243,8 @@ export const useTripStore = create<GlobalState>()(
         bookmarks: state.bookmarks,
         totalTripBudget: state.totalTripBudget,
         user: state.user,
-        settings: state.settings
+        settings: state.settings,
+        playlist: state.playlist
       }),
     }
   )
