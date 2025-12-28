@@ -1,0 +1,7 @@
+{
+  "name": "TravelBuddy",
+  "description": "A smart city guide and itinerary planner powered by AI. Discover attractions, build daily plans, and explore the world with interactive maps.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
